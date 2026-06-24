@@ -5,6 +5,8 @@
 1. [Hardware](#1-hardware)
 2. [Montagem do Modem M.2](#2-montagem-do-modem-m2)
 3. [Instalar OpenWrt no BPI-R3 Mini](#3-instalar-openwrt-no-bpi-r3-mini) — via pendrive USB
+   - [⚠️ IMPORTANTE — Instalar fan control logo após o boot](#️-importante--instale-o-controle-de-fan-antes-de-qualquer-outra-coisa)
+   - [3.6 Acesso via Wi-Fi](#36-acesso-via-wi-fi)
 4. [Suporte do kernel ao FN920C04](#4-suporte-do-kernel-ao-fn920c04)
 5. [Instalar Pacotes e Dependências](#5-instalar-pacotes-e-dependências)
 6. [Verificar o Modem](#6-verificar-o-modem)
@@ -183,11 +185,15 @@ umount /mnt/usb
 3. Retire o pendrive (opcional, mas recomendado)
 4. Ligue — o OpenWrt 24.10 sobe do eMMC
 
-### 3.5 Primeiro acesso
+### 3.5 Primeiro acesso via Ethernet
+
+Conecte um cabo Ethernet entre o seu computador e **qualquer uma das portas 2.5 GbE** do BPI-R3 Mini (a porta LAN padrão é a mais próxima do conector USB-C de alimentação).
 
 ```bash
-ssh root@192.168.1.1   # sem senha
+ssh root@192.168.1.1   # sem senha no primeiro boot
+```
 
+```bash
 # Defina senha imediatamente
 passwd
 
@@ -198,6 +204,101 @@ uci commit system
 ```
 
 Acesso web (LuCI): `http://192.168.1.1`
+
+---
+
+> ## ⚠️ IMPORTANTE — Instale o controle de fan antes de qualquer outra coisa
+>
+> O BPI-R3 Mini tem um **bug conhecido no OpenWrt**: o fan para de funcionar logo após o boot completar. Dentro do case oficial a placa pode atingir **73 °C ou mais em idle** sem o fan ligado, o que pode danificar o hardware ao longo do tempo.
+>
+> **Instale o controle de fan imediatamente após o primeiro boot**, antes de configurar qualquer outra coisa.
+>
+> ```bash
+> # No seu computador (onde clonou este repositório):
+> scp scripts/fancontrol.sh   root@192.168.1.1:/usr/bin/fancontrol
+> scp scripts/fancontrol-init root@192.168.1.1:/etc/init.d/fancontrol
+>
+> ssh root@192.168.1.1 "chmod +x /usr/bin/fancontrol /etc/init.d/fancontrol && \
+>     /etc/init.d/fancontrol enable && \
+>     /etc/init.d/fancontrol start"
+> ```
+>
+> Confirme que está funcionando:
+>
+> ```bash
+> ssh root@192.168.1.1 "/etc/init.d/fancontrol status"
+> # Deve mostrar: Temperatura : XX°C  |  Fan estado : LOW/MED/HIGH
+> ```
+>
+> O script corrige o bug do boot automaticamente toda vez que a placa iniciar, e controla a velocidade do fan por temperatura com histerese. Veja a seção [Scripts de controle do fan](#fan-control) para detalhes.
+
+---
+
+## 3.6 Acesso via Wi-Fi
+
+O OpenWrt 24.10 no BPI-R3 Mini **não cria rede Wi-Fi por padrão** — as interfaces wireless precisam ser configuradas manualmente no primeiro uso.
+
+### Configurar Wi-Fi pelo terminal (SSH/UART)
+
+```bash
+# Listar rádios disponíveis
+uci show wireless
+
+# Configurar rádio 5 GHz (radio0 = MT7976C 5G)
+uci set wireless.radio0.disabled='0'
+uci set wireless.radio0.channel='auto'
+uci set wireless.radio0.country='BR'
+
+# Criar rede Wi-Fi 5 GHz
+uci set wireless.default_radio0.ssid='BPI-R3-Mini'
+uci set wireless.default_radio0.encryption='psk2'
+uci set wireless.default_radio0.key='suasenha123'
+
+# Configurar rádio 2.4 GHz (radio1)
+uci set wireless.radio1.disabled='0'
+uci set wireless.radio1.channel='auto'
+uci set wireless.radio1.country='BR'
+
+uci set wireless.default_radio1.ssid='BPI-R3-Mini'
+uci set wireless.default_radio1.encryption='psk2'
+uci set wireless.default_radio1.key='suasenha123'
+
+uci commit wireless
+wifi up
+```
+
+Após `wifi up`, as redes aparecem em 10–15 segundos.
+
+### Conectar via Wi-Fi e SSH
+
+1. No seu celular ou computador, conecte à rede `BPI-R3-Mini`
+2. O roteador distribui DHCP — você receberá um IP no range `192.168.1.x`
+3. Acesse via SSH:
+
+```bash
+ssh root@192.168.1.1
+```
+
+4. Acesso web: abra `http://192.168.1.1` no navegador
+
+### Configurar Wi-Fi pelo LuCI (interface web)
+
+Se já estiver acessando via Ethernet ou SSH, o LuCI é mais simples:
+
+1. Abra `http://192.168.1.1` no navegador
+2. Vá em **Network → Wireless**
+3. Clique em **Edit** no rádio desejado (5 GHz ou 2.4 GHz)
+4. Configure **SSID**, **Encryption** (`WPA2-PSK`) e **Key**
+5. Clique em **Save & Apply**
+
+### Notas sobre Wi-Fi no BPI-R3 Mini
+
+| Rádio | Frequência | Chip | Padrão |
+|---|---|---|---|
+| `radio0` | 5 GHz | MT7976C | Wi-Fi 6 (802.11ax) — 3×3 |
+| `radio1` | 2.4 GHz | MT7976C | Wi-Fi 6 (802.11ax) — 2×2 |
+
+> O driver `mt76` para o MT7976C está incluído no OpenWrt 24.10. Não é necessário instalar pacotes adicionais para Wi-Fi básico.
 
 ---
 
