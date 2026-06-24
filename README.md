@@ -4,7 +4,7 @@
 
 1. [Hardware](#1-hardware)
 2. [Montagem do Modem M.2](#2-montagem-do-modem-m2)
-3. [Instalar OpenWrt no BPI-R3 Mini](#3-instalar-openwrt-no-bpi-r3-mini)
+3. [Instalar OpenWrt no BPI-R3 Mini](#3-instalar-openwrt-no-bpi-r3-mini) — via pendrive USB
 4. [Suporte do kernel ao FN920C04](#4-suporte-do-kernel-ao-fn920c04)
 5. [Instalar Pacotes e Dependências](#5-instalar-pacotes-e-dependências)
 6. [Verificar o Modem](#6-verificar-o-modem)
@@ -71,84 +71,119 @@
 
 ## 3. Instalar OpenWrt no BPI-R3 Mini
 
-### 3.1 Download da imagem
+### 3.1 Chave de boot (SW1) — única chave
+
+O BPI-R3 Mini tem **uma única chave** (não 4 como no BPI-R3 full) que seleciona entre os dois storages internos. Não há slot SD.
+
+| Posição | Boot de |
+|---|---|
+| **NAND** | SPI-NAND — **posição para instalar** |
+| **eMMC** | eMMC — posição de uso permanente |
+
+> A chave fica na borda da placa. A placa sai de fábrica com OpenWrt do fabricante gravado no NAND. Use essa instalação de fábrica para gravar o OpenWrt no eMMC.
+
+### 3.2 Imagens necessárias
+
+Baixe do [firmware selector](https://firmware-selector.openwrt.org/?target=mediatek%2Ffilogic&id=bananapi_bpi-r3-mini) ou diretamente:
 
 ```
 https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/
 ```
 
-Arquivos necessários:
+Baixe os 5 arquivos abaixo (substitua `24.10.0` pela versão atual):
 
-| Arquivo | Uso |
+| Arquivo | Gravado em |
 |---|---|
-| `openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini-sdcard.img.gz` | Gravar no SD — boot inicial |
-| `openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini-emmc.img.gz` | Instalar no eMMC (permanente) |
+| `openwrt-24.10.0-...-bananapi_bpi-r3-mini-emmc-gpt.bin` | `/dev/mmcblk0` (tabela de partições) |
+| `openwrt-24.10.0-...-bananapi_bpi-r3-mini-emmc-preloader.bin` | `/dev/mmcblk0boot0` (bootrom) |
+| `openwrt-24.10.0-...-bananapi_bpi-r3-mini-emmc-bl31-uboot.fip` | `/dev/mmcblk0p3` (U-Boot + ATF) |
+| `openwrt-24.10.0-...-bananapi_bpi-r3-mini-initramfs-recovery.itb` | `/dev/mmcblk0p4` (recovery) |
+| `openwrt-24.10.0-...-bananapi_bpi-r3-mini-squashfs-sysupgrade.itb` | `/dev/mmcblk0p5` (rootfs) |
 
-### 3.2 Gravar a imagem no cartão SD
+### 3.3 Preparar o pendrive USB
 
-**Linux / macOS:**
-```bash
-gunzip openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini-sdcard.img.gz
+Formate um pendrive como **FAT32** e copie os 5 arquivos acima para a raiz.
 
-# confirme o device do SD com lsblk ANTES de executar
-sudo dd if=openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini-sdcard.img \
-        of=/dev/sdX bs=4M status=progress conv=fsync
-```
+> O BPI-R3 Mini tem uma porta USB Type-A. É a mesma porta usada para o pendrive de instalação.
 
-**Windows:** [balenaEtcher](https://etcher.balena.io/) — aceita o `.img.gz` diretamente.
+### 3.4 Gravar OpenWrt no eMMC via USB (procedimento completo)
 
-### 3.3 Chaves DIP (SW1) — seleção de boot
+#### Passo 1 — Chave na posição NAND, ligar a placa
 
-O BPI-R3 Mini tem 4 chaves DIP. Leia da esquerda para a direita. `ON = 1`, `OFF = 0`.
+1. Coloque a chave SW1 na posição **NAND**
+2. Insira o pendrive USB com os arquivos de instalação
+3. Ligue a placa
 
-| Posição | Binário | Boot de |
-|---|---|---|
-| ON ON ON ON | `1111` | **SD Card** ← instalação inicial |
-| OFF ON ON OFF | `0110` | **eMMC** ← uso permanente |
-| ON OFF ON OFF | `1010` | SPI-NAND |
-| ON ON OFF OFF | `1100` | SPI-NOR |
+O OpenWrt de fábrica do NAND sobe automaticamente. O IP padrão é `192.168.1.1`.
 
-### 3.4 Boot pelo SD — acesso ao menu U-Boot
-
-1. Configure SW1 → `1111` (boot SD)
-2. Insira o cartão SD
-3. Conecte um adaptador USB-serial (3,3 V) no conector UART da placa — **115200 bps 8N1**
-4. Ligue — pressione qualquer tecla em menos de 2 s para abrir o **boot menu**
-
-```
-Please choose the operation:
-   3: Boot system code via Flash (default).
-   4: Enter boot command line interface.
-   7: Load bootloader → SPI-NOR Flash
-   8: Load bootloader → SPI-NAND Flash
-   9: Load bootloader → eMMC Flash
-```
-
-### 3.5 Instalar permanente no eMMC (recomendado)
-
-Após o primeiro boot pelo SD, o OpenWrt já está funcional em memória RAM. Para instalar no eMMC:
+#### Passo 2 — Acessar via SSH
 
 ```bash
-# Acesso SSH — IP padrão 192.168.1.1, sem senha
 ssh root@192.168.1.1
-
-# Baixa imagem eMMC direto no board
-wget -O /tmp/openwrt-emmc.img.gz \
-  https://downloads.openwrt.org/releases/24.10.0/targets/mediatek/filogic/\
-openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini-emmc.img.gz
-
-# Grava no eMMC
-gunzip -c /tmp/openwrt-emmc.img.gz | dd of=/dev/mmcblk0 bs=4M status=progress conv=fsync
-sync
+# senha: admin (ou vazia, depende da versão de fábrica)
 ```
 
-Após concluir:
-1. Desligue o board
-2. Configure SW1 → `0110` (boot eMMC)
-3. Retire o SD
-4. Religue — OpenWrt sobe do eMMC
+Se não funcionar via Ethernet, conecte um adaptador USB-serial (3,3 V) ao conector UART da borda da placa (**GND, RX, TX** — lembre de cruzar RX/TX) a **115200 bps 8N1**.
 
-### 3.6 Primeiro acesso
+#### Passo 3 — Montar o pendrive
+
+```bash
+# Identificar o device do pendrive
+ls /dev/sd*         # deve aparecer /dev/sda ou /dev/sda1
+
+mkdir -p /mnt/usb
+mount /dev/sda1 /mnt/usb
+ls /mnt/usb         # confirme que os arquivos estão lá
+```
+
+#### Passo 4 — Gravar no eMMC
+
+Execute os comandos abaixo **na ordem exata**. Defina a variável com o prefixo dos arquivos para simplificar:
+
+```bash
+# Ajuste o prefixo conforme a versão baixada
+IMG="/mnt/usb/openwrt-24.10.0-mediatek-filogic-bananapi_bpi-r3-mini"
+
+# 1. Tabela de partições GPT
+dd if="${IMG}-emmc-gpt.bin" of=/dev/mmcblk0 bs=512 conv=fsync
+sync
+
+# 2. Preloader (bootrom) — requer desabilitar proteção de escrita antes
+echo 0 > /sys/block/mmcblk0boot0/force_ro
+dd if="${IMG}-emmc-preloader.bin" of=/dev/mmcblk0boot0 bs=512 conv=fsync
+sync
+
+# 3. Recarregar tabela de partições (necessário após gravar a GPT)
+mdev -s 2>/dev/null || true
+sleep 2
+
+# 4. U-Boot + ARM Trusted Firmware
+dd if="${IMG}-emmc-bl31-uboot.fip" of=/dev/mmcblk0p3 bs=512 conv=fsync
+
+# 5. Recovery kernel
+dd if="${IMG}-initramfs-recovery.itb" of=/dev/mmcblk0p4 bs=512 conv=fsync
+
+# 6. Sistema de arquivos (rootfs)
+dd if="${IMG}-squashfs-sysupgrade.itb" of=/dev/mmcblk0p5 bs=512 conv=fsync
+sync
+
+# 7. Habilitar boot pelo eMMC
+mmc bootpart enable 1 1 /dev/mmcblk0
+```
+
+#### Passo 5 — Trocar a chave e reiniciar
+
+```bash
+# Desmontar o pendrive
+umount /mnt/usb
+```
+
+1. Desligue a placa (sem o `reboot`, para poder mexer na chave com segurança)
+2. Coloque a chave SW1 na posição **eMMC**
+3. Retire o pendrive (opcional, mas recomendado)
+4. Ligue — o OpenWrt 24.10 sobe do eMMC
+
+### 3.5 Primeiro acesso
 
 ```bash
 ssh root@192.168.1.1   # sem senha
@@ -515,13 +550,12 @@ logread | grep -E "netifd|qmi|wan_5g"
 
 ## 11. Referência Rápida
 
-### DIP switches BPI-R3 Mini
+### Chave de boot BPI-R3 Mini (única chave SW1)
 
-| Situação | SW1 | Binário |
-|---|---|---|
-| Boot pelo SD (instalação) | ON ON ON ON | `1111` |
-| Boot pelo eMMC (produção) | OFF ON ON OFF | `0110` |
-| Boot pelo NAND | ON OFF ON OFF | `1010` |
+| Situação | Posição SW1 |
+|---|---|
+| Instalar (gravar eMMC via USB) | **NAND** |
+| Uso permanente após instalação | **eMMC** |
 
 ### PIDs USB — FN920C04 (VID `0x1bc7`)
 
