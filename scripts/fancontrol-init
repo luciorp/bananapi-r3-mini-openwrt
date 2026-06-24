@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+#
+# /etc/init.d/fancontrol — Serviço procd para o controle de fan
+#
+# Uso:
+#   /etc/init.d/fancontrol enable   — habilita no boot
+#   /etc/init.d/fancontrol start    — inicia agora
+#   /etc/init.d/fancontrol stop     — para
+#   /etc/init.d/fancontrol status   — estado atual do fan e temperatura
+#   /etc/init.d/fancontrol restart  — reinicia
+#
+
+USE_PROCD=1
+START=95    # inicia depois do sistema estar up; antes de serviços de rede
+STOP=10
+
+FANCONTROL_BIN="/usr/bin/fancontrol"
+
+start_service() {
+    procd_open_instance
+    procd_set_param command "$FANCONTROL_BIN" start
+    procd_set_param respawn 3600 5 0   # reinicia se cair; max 5 reinícios/hora
+    procd_set_param stdout 0
+    procd_set_param stderr 0
+    procd_close_instance
+}
+
+stop_service() {
+    # Para o fan em nível baixo ao parar o serviço (não deixa fan a 0 por segurança)
+    local cd="/sys/class/thermal/cooling_device0/cur_state"
+    [ -f "$cd" ] && echo 1 > "$cd" 2>/dev/null
+}
+
+status() {
+    "$FANCONTROL_BIN" status
+}

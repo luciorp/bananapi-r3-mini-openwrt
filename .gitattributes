@@ -1,0 +1,3 @@
+﻿* text=auto
+*.sh text eol=lf
+scripts/fancontrol-init text eol=lf
