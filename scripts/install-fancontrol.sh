@@ -15,8 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 remote_install() {
     echo "→ Copiando arquivos para root@${ROUTER}..."
-    scp "${SCRIPT_DIR}/fancontrol.sh"   "root@${ROUTER}:/usr/bin/fancontrol" || exit 1
-    scp "${SCRIPT_DIR}/fancontrol-init" "root@${ROUTER}:/etc/init.d/fancontrol" || exit 1
+    # -O: usa protocolo SCP legado (OpenWrt não tem sftp-server)
+    scp -O "${SCRIPT_DIR}/fancontrol.sh"   "root@${ROUTER}:/usr/bin/fancontrol" || exit 1
+    scp -O "${SCRIPT_DIR}/fancontrol-init" "root@${ROUTER}:/etc/init.d/fancontrol" || exit 1
 
     echo "→ Configurando permissões e habilitando serviço..."
     ssh "root@${ROUTER}" 'sh -s' << 'EOF'
