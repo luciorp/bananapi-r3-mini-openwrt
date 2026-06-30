@@ -32,7 +32,7 @@ PERIOD=10000
 
 # Duty cycle (ns): quanto menor, mais rápido o fan
 DUTY_OFF=$PERIOD   # fan desligado
-DUTY_LOW=7000      # ~30% velocidade
+DUTY_LOW=3500      # ~65% velocidade (fan arranca do repouso a partir de duty≤4000)
 DUTY_MED=4000      # ~60% velocidade
 DUTY_HIGH=1500     # ~85% velocidade
 DUTY_CRITICAL=0    # 100% velocidade
@@ -56,9 +56,9 @@ set_duty() {
 }
 
 cleanup() {
-    set_duty "$DUTY_OFF"
-    echo 0 > "$PWM/enable" 2>/dev/null
-    echo 0 > "$PWM_CHIP/unexport" 2>/dev/null
+    [ -d "$PWM" ] && echo "$DUTY_OFF" > "$PWM/duty_cycle" 2>/dev/null
+    [ -d "$PWM" ] && echo 0 > "$PWM/enable" 2>/dev/null
+    [ -d "$PWM" ] && echo 0 > "$PWM_CHIP/unexport" 2>/dev/null
     log "Serviço encerrado — fan desligado"
     exit 0
 }
