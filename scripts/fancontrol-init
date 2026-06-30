@@ -1,36 +1,63 @@
 #!/bin/sh /etc/rc.common
 #
-# /etc/init.d/fancontrol — Serviço procd para o controle de fan
+# /etc/init.d/fancontrol — Serviço procd para o controle de fan (BPI-R3 Mini)
 #
 # Uso:
 #   /etc/init.d/fancontrol enable   — habilita no boot
+#   /etc/init.d/fancontrol disable  — desabilita no boot
 #   /etc/init.d/fancontrol start    — inicia agora
-#   /etc/init.d/fancontrol stop     — para
-#   /etc/init.d/fancontrol status   — estado atual do fan e temperatura
+#   /etc/init.d/fancontrol stop     — para (fan fica em OFF)
 #   /etc/init.d/fancontrol restart  — reinicia
+#   /etc/init.d/fancontrol status   — temperatura e estado atual
 #
 
 USE_PROCD=1
-START=95    # inicia depois do sistema estar up; antes de serviços de rede
+START=95   # inicia depois do sistema estar up
 STOP=10
 
 FANCONTROL_BIN="/usr/bin/fancontrol"
+PWM_CHIP="/sys/class/pwm/pwmchip0"
 
 start_service() {
     procd_open_instance
-    procd_set_param command "$FANCONTROL_BIN" start
+    procd_set_param command "$FANCONTROL_BIN"
     procd_set_param respawn 3600 5 0   # reinicia se cair; max 5 reinícios/hora
-    procd_set_param stdout 0
-    procd_set_param stderr 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
     procd_close_instance
 }
 
 stop_service() {
-    # Para o fan em nível baixo ao parar o serviço (não deixa fan a 0 por segurança)
-    local cd="/sys/class/thermal/cooling_device0/cur_state"
-    [ -f "$cd" ] && echo 1 > "$cd" 2>/dev/null
+    # Desliga o fan com segurança ao parar o serviço
+    local pwm="${PWM_CHIP}/pwm0"
+    if [ -d "$pwm" ]; then
+        echo 10000 > "${pwm}/duty_cycle" 2>/dev/null   # duty_cycle = period → fan OFF
+        echo 0     > "${pwm}/enable"     2>/dev/null
+        echo 0     > "${PWM_CHIP}/unexport" 2>/dev/null
+    fi
 }
 
 status() {
-    "$FANCONTROL_BIN" status
+    local temp_raw temp_c pwm duty period pct
+    temp_raw=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+    temp_c=$((temp_raw / 1000))
+
+    echo "Temperatura : ${temp_c}°C"
+
+    pwm="${PWM_CHIP}/pwm0"
+    if [ -d "$pwm" ]; then
+        duty=$(cat "${pwm}/duty_cycle" 2>/dev/null)
+        period=$(cat "${pwm}/period"    2>/dev/null)
+        enabled=$(cat "${pwm}/enable"   2>/dev/null)
+        if [ "$enabled" = "0" ] || [ "$duty" = "$period" ]; then
+            echo "Fan estado  : OFF (duty=${duty}ns)"
+        elif [ "$duty" = "0" ]; then
+            echo "Fan estado  : CRITICAL/MAX (duty=0ns)"
+        else
+            pct=$(( (period - duty) * 100 / period ))
+            echo "Fan estado  : ${pct}% velocidade (duty=${duty}ns / period=${period}ns)"
+        fi
+    else
+        echo "Fan estado  : PWM não exportado (fan inativo ou serviço parado)"
+    fi
 }

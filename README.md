@@ -72,26 +72,21 @@ Enquanto ainda está conectado via Ethernet, instale o controle de fan antes de 
 No seu computador (onde você clonou este repositório):
 
 ```bash
-# Copia os scripts para a placa
-scp scripts/fancontrol.sh   root@192.168.1.1:/usr/bin/fancontrol
-scp scripts/fancontrol-init root@192.168.1.1:/etc/init.d/fancontrol
-
-# Ativa e inicia o serviço
-ssh root@192.168.1.1 "chmod +x /usr/bin/fancontrol /etc/init.d/fancontrol && \
-    /etc/init.d/fancontrol enable && \
-    /etc/init.d/fancontrol start"
+sh scripts/install-fancontrol.sh 192.168.1.1
 ```
 
-Verifique:
+O script copia os arquivos, configura as permissões, habilita o serviço no boot e já inicia. Verifique o resultado:
 
 ```bash
 ssh root@192.168.1.1 "/etc/init.d/fancontrol status"
 # Saída esperada:
 # Temperatura : 48°C
-# Fan estado  : LOW (1/3)
+# Fan estado  : 30% velocidade (duty=7000ns / period=10000ns)
 ```
 
 A partir deste momento o fan funciona automaticamente e sobrevive a reboots.
+
+> **Como funciona:** o script controla o fan diretamente via PWM (`/sys/class/pwm/pwmchip0/pwm0`). A lógica é invertida — duty cycle menor = fan mais rápido. Estágios: OFF → LOW (30%) → MED (60%) → HIGH (85%) → CRITICAL (100%), com histerese de 4 °C para evitar oscilação.
 
 ---
 
@@ -127,14 +122,10 @@ Aguarde ~2 minutos. A placa reinicia com o OpenWrt 24.10 oficial.
 
 ### 4.3 Reinstalar o controle de fan após o sysupgrade
 
-O sysupgrade apaga arquivos em `/usr/bin` e `/etc/init.d`. Reinstale o fan control:
+O sysupgrade apaga arquivos em `/usr/bin` e `/etc/init.d`. Reinstale rodando o mesmo comando do início:
 
 ```bash
-scp scripts/fancontrol.sh   root@192.168.1.1:/usr/bin/fancontrol
-scp scripts/fancontrol-init root@192.168.1.1:/etc/init.d/fancontrol
-ssh root@192.168.1.1 "chmod +x /usr/bin/fancontrol /etc/init.d/fancontrol && \
-    /etc/init.d/fancontrol enable && \
-    /etc/init.d/fancontrol start"
+sh scripts/install-fancontrol.sh 192.168.1.1
 ```
 
 ---
@@ -354,9 +345,12 @@ watch -n 5 'uqmi -d /dev/cdc-wdm0 --get-serving-system'
 
 **Fan não funciona após reboot**
 ```bash
-/etc/init.d/fancontrol status   # verifica se o serviço está ativo
-/etc/init.d/fancontrol start    # inicia manualmente se necessário
-logread | grep fancontrol        # ver histórico
+/etc/init.d/fancontrol status    # verifica se o serviço está ativo
+/etc/init.d/fancontrol start     # inicia manualmente se necessário
+logread | grep fancontrol         # ver histórico de mudanças de velocidade
+
+# Verificar se o PWM foi exportado
+ls /sys/class/pwm/pwmchip0/pwm0  # deve existir quando o serviço está ativo
 ```
 
 ---
@@ -384,12 +378,12 @@ uqmi -d /dev/cdc-wdm0 --get-iccid            # ICCID do SIM
 
 ```bash
 # Temperatura atual
-cat /sys/class/thermal/thermal_zone0/temp    # divide por 1000 = graus C
+cat /sys/class/thermal/thermal_zone0/temp    # divide por 1000 = °C
 
-# Estado do fan (0=off 1=low 2=med 3=high)
-cat /sys/class/thermal/cooling_device0/cur_state
+# Duty cycle atual do PWM (menor = fan mais rápido; igual ao period = fan OFF)
+cat /sys/class/pwm/pwmchip0/pwm0/duty_cycle
 
-# Status completo
+# Status completo (temperatura + % de velocidade)
 /etc/init.d/fancontrol status
 ```
 
